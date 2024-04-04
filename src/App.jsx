@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
 import {
   collection,
   getDocs,
@@ -14,23 +13,18 @@ import {
 
 import {
   getAuth,
-  signInWithPopup,
   GoogleAuthProvider,
   setPersistence,
   browserLocalPersistence,
-  onAuthStateChanged,
   signOut,
+  signInWithRedirect,
 } from "firebase/auth";
 
 import Chat from "./Chat";
 import SignIn from "./SignIn";
 import SignOut from "./SignOut";
+import CopyLink from "./CopyLink";
 
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -40,10 +34,8 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
-console.log(firebaseConfig);
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-// const analytics = getAnalytics(app);
 const auth = getAuth(app);
 await setPersistence(auth, browserLocalPersistence);
 const provider = new GoogleAuthProvider();
@@ -51,25 +43,35 @@ const db = getFirestore(app);
 const messageRef = collection(db, "messages");
 const q = query(messageRef, orderBy("time"), limitToLast(15));
 
+function checkWebView() {
+  const userAgent = navigator.userAgent;
+  if (/WebView/.test(userAgent) || /wv/.test(userAgent)) {
+    return true;
+  }
+  if (/(iPhone|iPod|iPad).*AppleWebKit(?!.*Safari)/i.test(userAgent)) {
+    return true;
+  }
+  return false;
+}
+
 function App() {
   const [messages, setMessages] = useState([]);
   const [user, setUser] = useState(auth.currentUser);
   const [lastWriteTime, setLastWriteTime] = useState(null);
+  const [isWebView, setIsWebView] = useState(null);
 
   useEffect(() => {
+    setIsWebView(checkWebView());
     getMessages().catch((e) => {
-      console.log(e);
+      console.log(e, "Not logged in");
     });
-    console.log("User changed to", user);
   }, [user]);
 
-  function authenticate() {
+  function login() {
     setPersistence(auth, browserLocalPersistence).then(() => {
-      signInWithPopup(auth, provider)
+      signInWithRedirect(auth, provider)
         .then((result) => {
           // This gives you a Google Access Token. You can use it to access the Google API.
-          const credential = GoogleAuthProvider.credentialFromResult(result);
-          const token = credential.accessToken;
           setUser(result.user);
           console.log("Successfully logged in");
         })
@@ -82,7 +84,7 @@ function App() {
   async function logout() {
     await signOut(auth);
     setUser(null);
-    console.log("logged out");
+    console.log("Successfluly logged out");
   }
 
   async function getMessages() {
@@ -102,7 +104,7 @@ function App() {
 
   async function sendMessage(msg) {
     if (user) {
-      // Check if it has been at least 1 second since the last write
+      // Check if it has been at least 5 second since the last write
       const currentTime = Date.now();
       if (!lastWriteTime || currentTime - lastWriteTime >= 5000) {
         setLastWriteTime(currentTime);
@@ -123,7 +125,20 @@ function App() {
   return (
     <>
       <h2 className="heading">Pooblic Chat App</h2>
-      {user ? (
+
+      {isWebView ? (
+        <div className="webview-div">
+          Detected you are using a webview. Google does not support OAuth in
+          WebViews. Please open the link in a browser:
+          <a
+            onClick={() => window.open(this.href, "_system")}
+            href="https://chatapp-662fd.web.app/"
+          >
+            https://chatapp-662fd.web.app/
+          </a>
+          <CopyLink />
+        </div>
+      ) : user ? (
         <>
           <SignOut logout={logout} />
           <Chat
@@ -134,7 +149,7 @@ function App() {
           />
         </>
       ) : (
-        <SignIn authenticate={authenticate} />
+        <SignIn login={login} />
       )}
     </>
   );
